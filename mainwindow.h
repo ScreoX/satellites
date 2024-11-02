@@ -21,10 +21,8 @@ private:
     void clickOnFileButton();
     void clickOnUrlButton();
     void clickOnSaveButton();
-
     QString findStatistics(QList<Satellite>& satellites);
 
-private:
     Ui::MainWindow *ui;
     QNetworkAccessManager* networkManager;
 };
