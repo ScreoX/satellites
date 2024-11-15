@@ -2,6 +2,7 @@
 #define SATELLITIES_MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QNetworkReply>
 
 #include "tle_parser.h"
 
@@ -21,10 +22,13 @@ private:
     void clickOnFileButton();
     void clickOnUrlButton();
     void clickOnSaveButton();
-    QString findStatistics(QList<Satellite>& satellites);
+    void networkReplyFinished(QNetworkReply* reply);
+    static QString getStatistics(QList<Satellite>& satellites);
 
     Ui::MainWindow *ui;
     QNetworkAccessManager* networkManager;
+
+    QString m_statistics;
 };
 
 #endif

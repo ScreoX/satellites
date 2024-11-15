@@ -20,30 +20,32 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->loadUrlButton, &QPushButton::clicked, this, &MainWindow::clickOnUrlButton);
     connect(ui->selectFileButton, &QPushButton::clicked, this, &MainWindow::clickOnFileButton);
     connect(ui->saveStatsButton, &QPushButton::clicked, this, &MainWindow::clickOnSaveButton);
+
+    connect(networkManager, &QNetworkAccessManager::finished, this, &MainWindow::networkReplyFinished);
 }
+
 
 MainWindow::~MainWindow()
 {
     delete ui;
 }
 
-QString MainWindow::findStatistics(QList<Satellite>& satellites) {
-    QString statistics;
-    int totalSatellites = satellites.size();
+QString MainWindow::getStatistics(QList<Satellite>& satellites) {
+    QStringList statisticsList;
 
-    statistics += QString("Общее количество спутников: %1\n").arg(totalSatellites);
+    statisticsList << QString("Общее количество спутников: %1").arg(satellites.size());
 
     if (!satellites.isEmpty()) {
         QDate oldestDate = satellites.first().date;
         for (const auto& satellite : satellites) {
             oldestDate = std::min(satellite.date, oldestDate);
         }
-        statistics += QString("Дата самых старых данных: %1\n").arg(oldestDate.toString("dd.MM.yyyy"));
+        statisticsList << QString("Дата самых старых данных: %1").arg(oldestDate.toString("dd.MM.yyyy"));
     }
 
     QMap<int, int> launchesByYear;
-    for (const auto& sat : satellites) {
 
+    for (const auto& sat : satellites) {
         bool conversionSuccess;
         int year = sat.launchYear.toInt(&conversionSuccess);
 
@@ -53,30 +55,41 @@ QString MainWindow::findStatistics(QList<Satellite>& satellites) {
             } else {
                 year += 1900;
             }
+
+            if (!launchesByYear.contains(year)) {
+                launchesByYear.insert(year, 0);
+            }
+
             launchesByYear[year]++;
         }
     }
 
-    statistics += "Количество запущенных спутников по годам:\n";
+    statisticsList << "Количество запущенных спутников по годам:";
 
-    for (auto launch = launchesByYear.begin(); launch != launchesByYear.end(); launch++) {
-        statistics += QString("%1: %2\n").arg(launch.key()).arg(launch.value());
+    for (auto it = launchesByYear.begin(); it != launchesByYear.end(); ++it) {
+        statisticsList << QString("%1: %2").arg(it.key()).arg(it.value());
     }
 
     QMap<int, int> inclinationDistribution;
     for (const auto& satellite : satellites) {
         int inclinationDegree = qRound(satellite.inclination);
+
+        if (!inclinationDistribution.contains(inclinationDegree)) {
+            inclinationDistribution.insert(inclinationDegree, 0);
+        }
+
         inclinationDistribution[inclinationDegree]++;
     }
 
-    statistics += "Количество спутников по наклонению орбиты:\n";
+    statisticsList << "Количество спутников по наклонению орбиты:";
 
-    for (auto inclination = inclinationDistribution.begin(); inclination != inclinationDistribution.end(); ++inclination) {
-        statistics += QString("%1°: %2\n").arg(inclination.key()).arg(inclination.value());
+    for (auto it = inclinationDistribution.begin(); it != inclinationDistribution.end(); ++it) {
+        statisticsList << QString("%1°: %2").arg(it.key()).arg(it.value());
     }
 
-    return statistics;
+    return statisticsList.join("\n");
 }
+
 
 void MainWindow::clickOnFileButton()
 {
@@ -110,9 +123,9 @@ void MainWindow::clickOnFileButton()
         return;
     }
 
-    QString statisticsResult = findStatistics(satellites);
+    m_statistics = getStatistics(satellites);
 
-    ui->statsTextEdit->setPlainText(statisticsResult);
+    ui->statsTextEdit->setPlainText(m_statistics);
     ui->statusLabel->setText("Status: Success");
 }
 
@@ -130,35 +143,37 @@ void MainWindow::clickOnUrlButton()
         return;
     }
 
-    QNetworkReply* reply = networkManager->get(QNetworkRequest(qUrl));
+    QNetworkRequest request(qUrl);
+    networkManager->get(request);
+}
 
-    connect(reply, &QNetworkReply::finished, [this, reply]() {
-        if (reply->error() != QNetworkReply::NoError) {
-            QMessageBox::critical(this, "Error with loading URL", reply->errorString());
-            ui->statusLabel->setText("Status: Error with loading URL");
-            reply->deleteLater();
-            return;
-        }
-
-        QByteArray inputData = reply->readAll();
-
-        TLEParser parser;
-        QList<Satellite> satellites;
-        QString errorMessage;
-
-        if (!parser.parse(QString(inputData).split(QRegularExpression("\\r?\\n"), Qt::SkipEmptyParts), satellites, errorMessage)) {
-            QMessageBox::critical(this, "Error with parsing TLE", errorMessage);
-            ui->statusLabel->setText("Status: error with parsing");
-            reply->deleteLater();
-            return;
-        }
-
-        QString statisticsResult = findStatistics(satellites);
-
-        ui->statsTextEdit->setPlainText(statisticsResult);
-        ui->statusLabel->setText("Status: Success");
+void MainWindow::networkReplyFinished(QNetworkReply* reply)
+{
+    if (reply->error() != QNetworkReply::NoError) {
+        QMessageBox::critical(this, "Error with loading URL", reply->errorString());
+        ui->statusLabel->setText("Status: Error with loading URL");
         reply->deleteLater();
-    });
+        return;
+    }
+
+    QByteArray inputData = reply->readAll();
+
+    TLEParser parser;
+    QList<Satellite> satellites;
+    QString errorMessage;
+
+    if (!parser.parse(QString(inputData).split(QRegularExpression("\\r?\\n"), Qt::SkipEmptyParts), satellites, errorMessage)) {
+        QMessageBox::critical(this, "Error with parsing TLE", errorMessage);
+        ui->statusLabel->setText("Status: error with parsing");
+        reply->deleteLater();
+        return;
+    }
+
+    m_statistics = getStatistics(satellites);
+
+    ui->statsTextEdit->setPlainText(m_statistics);
+    ui->statusLabel->setText("Status: Success");
+    reply->deleteLater();
 }
 
 void MainWindow::clickOnSaveButton()
@@ -173,7 +188,7 @@ void MainWindow::clickOnSaveButton()
     }
 
     QTextStream out(&file);
-    out << ui->statsTextEdit->toPlainText();
+    out << m_statistics;
     file.close();
 
     QMessageBox::information(this, "Saving statistics", "Success of saving statistics");

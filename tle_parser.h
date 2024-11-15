@@ -7,7 +7,7 @@
 
 struct Satellite {
     QString name;
-    QString satelliteNumber;
+    int NORAD;
     QString launchYear;
     QString launchNumber;
     QString launchPiece;
